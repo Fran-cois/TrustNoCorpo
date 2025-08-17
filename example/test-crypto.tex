@@ -1,0 +1,43 @@
+\documentclass[11pt]{article}
+% Utiliser le style trustnocorpo embarqué
+\usepackage{trustnocorpo-spacial}
+
+\usepackage[utf8]{inputenc}
+\usepackage{geometry}
+\usepackage{hyperref}
+
+\title{TrustNoCorpo (tnc) — Démonstration}
+\author{TrustNoCorpo}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+Ce document démontre le système de traçabilité cryptographique de \textbf{TrustNoCorpo (tnc)}. À chaque génération, tnc intègre des métadonnées (hash de build, classification, informations d'origine) directement dans le PDF et journalise l'opération dans une base chiffrée.
+
+\section{Fonctionnalités}
+
+\begin{itemize}
+    \item Traçabilité automatique de chaque build (horodatage, utilisateur, machine)
+    \item Classification configurable (ex. \texttt{CONFIDENTIAL}, \texttt{SECRET})
+    \item Intégration de métadonnées via le style \texttt{trustnocorpo-spacial}
+    \item Hash unique par génération pour vérification ultérieure
+\end{itemize}
+
+\section{Informations de Sécurité}
+
+Ce document contient des informations de traçabilité intégrées par tnc permettant de :
+\begin{enumerate}
+    \item Identifier qui a généré le document
+    \item Connaître le moment exact de génération
+    \item Tracer la machine d'origine
+    \item Vérifier l'intégrité via le hash
+\end{enumerate}
+
+\section{Décodage}
+
+Les informations de traçabilité et la classification sont intégrées automatiquement via le style \texttt{trustnocorpo-spacial}. Utilisez la CLI \texttt{trustnocorpo} pour vérifier et lister les builds.
+
+\end{document}

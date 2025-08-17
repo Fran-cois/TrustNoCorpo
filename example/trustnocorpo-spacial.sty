@@ -1,0 +1,53 @@
+
+% trustnocorpo LaTeX Style (Embedded Version)
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{trustnocorpo-spacial}[2025/08/17 trustnocorpo Cryptographic Style]
+
+\RequirePackage{hyperref}
+\RequirePackage{ifthen}
+\RequirePackage{xcolor}
+\RequirePackage{graphicx}
+\RequirePackage{eso-pic}
+\RequirePackage{fancyhdr}
+
+% Cryptographic information embedding
+\newcommand{\capyEmbedCryptoInfo}{%
+    \ifdefined\capyBuildHash%
+        \hypersetup{%
+            pdfsubject={Build: \capyBuildHash},
+            pdfkeywords={trustnocorpo, Crypto, \capyClassification}
+        }%
+    \fi%
+}
+
+% Optional watermark (uses \capyWatermarkText if defined)
+\newcommand{\capyApplyWatermark}{%
+    \ifdefined\capyWatermarkText%
+        \AddToShipoutPictureBG*{%
+            \AtPageLowerLeft{%
+                \begin{minipage}[b][\paperheight]{\paperwidth}%
+                    \centering
+                    {\color{gray!40}\fontsize{6cm}{6cm}\selectfont\rotatebox{45}{\capyWatermarkText}}%
+                \end{minipage}%
+            }%
+        }%
+    \fi%
+}
+
+% Optional footer text (uses \capyFooterText if defined)
+\newcommand{\capyApplyFooter}{%
+    \ifdefined\capyFooterText%
+        \pagestyle{fancy}%
+        \fancyhf{}%
+        \fancyfoot[C]{\small \capyFooterText\,\,\textbullet\,\,Page~\thepage}%
+    \fi%
+}
+
+% Auto-embed at document start
+\AtBeginDocument{%
+    \capyEmbedCryptoInfo%
+    \capyApplyWatermark%
+    \capyApplyFooter%
+}
+
+\endinput
