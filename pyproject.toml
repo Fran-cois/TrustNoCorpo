@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "trustnocorpo"
-version = "1.0.0"
+version = "1.0.1"
 description = "Cryptographic PDF tracking for LaTeX with optional PDF protection and encrypted audit logs."
 authors = [{ name = "TrustNoCorpo Security Team" }]
 license = { text = "MIT" }

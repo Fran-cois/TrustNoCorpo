@@ -14,7 +14,7 @@ New code should import from `tnc` directly.
 from importlib import import_module
 import sys as _sys
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __author__ = "TrustNoCorpo Security Team"
 __license__ = "MIT"
 

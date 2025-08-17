@@ -278,7 +278,7 @@ class trustnocorpo:
             db_stats = self.logger.get_user_builds_stats() or {}
             
             info = {
-                'version': '1.0.0',
+                'version': '1.0.1',
                 'project_dir': str(self.project_dir),
                 'trustnocorpo_dir': str(self.trustnocorpo_dir),
                 'user_keys_active': self.key_manager.user_has_keys(),
