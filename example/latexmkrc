@@ -1,0 +1,8 @@
+# latexmk configuration for TrustNoCorpo examples
+# Force PDF output using lualatex, write artifacts to build/
+$pdf_mode = 1;
+$pdflatex = 'lualatex %O %S';
+$out_dir = 'build';
+$silent = 1;
+$interaction = 'nonstopmode';
+$synctex = '1';

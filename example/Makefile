@@ -33,16 +33,32 @@ BUILD_HASH := $(shell echo "$(GENERATION_INFO)$(GENERATION_TIME)" | shasum -a 25
 PDF_PASSWORD ?=
 
 # Watermark and footer options
-# Example: make WATERMARK="CONFIDENTIAL" FOOTER_FP=yes
+# Example: make WATERMARK="CONFIDENTIAL" WM_OPACITY=35 WM_ANGLE=30 WM_TILE=yes FOOTER_FP=yes
 WATERMARK ?=
+WM_OPACITY ?=
+WM_ANGLE ?=
+WM_TILE ?= no
 FOOTER_FP ?= no
 ONLY_PASSWORD ?= no
+
+# Per-recipient embedding (opt-in)
+RECIPIENT_ID ?=
+
+# Rasterization (optional)
+RASTERIZE ?= no
+RASTER_DPI ?= 150
 
 # Derived CLI flags
 BUILD_FLAGS := --classification="$(CLASSIFICATION)" --output-dir="$(OUTDIR)"
 BUILD_FLAGS += $(if $(WATERMARK),--watermark="$(WATERMARK)",)
+BUILD_FLAGS += $(if $(WM_OPACITY),--wm-opacity=$(WM_OPACITY),)
+BUILD_FLAGS += $(if $(WM_ANGLE),--wm-angle=$(WM_ANGLE),)
+BUILD_FLAGS += $(if $(filter yes true 1,$(WM_TILE)),--wm-tile,)
 BUILD_FLAGS += $(if $(filter yes true 1,$(FOOTER_FP)),--footer-fingerprint,)
 BUILD_FLAGS += $(if $(filter yes true 1,$(ONLY_PASSWORD)),--only-password,)
+BUILD_FLAGS += $(if $(RECIPIENT_ID),--recipient-id=$(RECIPIENT_ID),)
+BUILD_FLAGS += $(if $(filter yes true 1,$(RASTERIZE)),--rasterize,)
+BUILD_FLAGS += $(if $(RASTER_DPI),--raster-dpi=$(RASTER_DPI),)
 
 # Options latexmk (si présent)
 LATEXMK := $(shell command -v latexmk 2>/dev/null || true)
@@ -150,6 +166,15 @@ protect-pdf:
 		echo "❌ PDF not found: $(PDF)"; \
 		exit 1; \
 	fi
+
+# Fanout helper: build per-recipient PDFs from CSV (expects CSV with header: recipient,id or token)
+.PHONY: fanout
+FANOUT_CSV ?=
+FANOUT_OUTDIR ?= fanout
+fanout: init
+	@if [ -z "$(FANOUT_CSV)" ]; then echo "Usage: make fanout FANOUT_CSV=recipients.csv [FANOUT_OUTDIR=fanout]"; exit 1; fi
+	@mkdir -p "$(FANOUT_OUTDIR)"
+	@$(TRUSTNOCORPO) fanout "$(FANOUT_CSV)" "$(MAIN)" --classification="$(CLASSIFICATION)" -o "$(FANOUT_OUTDIR)" $(if $(WATERMARK),--watermark="$(WATERMARK)",) $(if $(WM_OPACITY),--wm-opacity=$(WM_OPACITY),) $(if $(WM_ANGLE),--wm-angle=$(WM_ANGLE),) $(if $(filter yes true 1,$(WM_TILE)),--wm-tile,) $(if $(filter yes true 1,$(FOOTER_FP)),--footer-fingerprint,)
 
 # Déprotection PDF (pour tests)
 unprotect-pdf:

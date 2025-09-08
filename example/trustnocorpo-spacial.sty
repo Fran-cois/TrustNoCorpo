@@ -1,53 +1,30 @@
-
-% trustnocorpo LaTeX Style (Embedded Version)
+% trustnocorpo LaTeX Style (Example wrapper)
+% This example package is a thin, branded wrapper around the core `tnc` package.
+% It exposes trustnocorpo-branded helper macros while staying compatible.
 \NeedsTeXFormat{LaTeX2e}
-\ProvidesPackage{trustnocorpo-spacial}[2025/08/17 trustnocorpo Cryptographic Style]
+\ProvidesPackage{trustnocorpo-spacial}[2025/09/09 TrustNoCorpo branded wrapper over tnc]
 
-\RequirePackage{hyperref}
-\RequirePackage{ifthen}
-\RequirePackage{xcolor}
-\RequirePackage{graphicx}
-\RequirePackage{eso-pic}
-\RequirePackage{fancyhdr}
+% Load the core package
+\RequirePackage{tnc}
 
-% Cryptographic information embedding
-\newcommand{\capyEmbedCryptoInfo}{%
-    \ifdefined\capyBuildHash%
-        \hypersetup{%
-            pdfsubject={Build: \capyBuildHash},
-            pdfkeywords={trustnocorpo, Crypto, \capyClassification}
-        }%
-    \fi%
-}
+% Branded helper macros (use these in your documents)
+%  \trustnocorpoClass{LEVEL}
+%  \trustnocorpoWatermark{TEXT}
+%  \trustnocorpoWatermarkSetup{opacity=40,angle=45,tile=false}
+%  \trustnocorpoFooter{TEXT}
+%  \trustnocorpoRecipient{TOKEN}
+\newcommand{\trustnocorpoClass}[1]{\tncclass{#1}}
+\newcommand{\trustnocorpoWatermark}[1]{\tncwatermark{#1}}
+\newcommand{\trustnocorpoWatermarkSetup}[1]{\tncwatermarksetup{#1}}
+\newcommand{\trustnocorpoFooter}[1]{\tncfooterfingerprint{#1}}
+\newcommand{\trustnocorpoRecipient}[1]{\tncrecipient{#1}}
 
-% Optional watermark (uses \capyWatermarkText if defined)
-\newcommand{\capyApplyWatermark}{%
-    \ifdefined\capyWatermarkText%
-        \AddToShipoutPictureBG*{%
-            \AtPageLowerLeft{%
-                \begin{minipage}[b][\paperheight]{\paperwidth}%
-                    \centering
-                    {\color{gray!40}\fontsize{6cm}{6cm}\selectfont\rotatebox{45}{\capyWatermarkText}}%
-                \end{minipage}%
-            }%
-        }%
-    \fi%
-}
+% Auto-inject metadata/watermark/footer invisibly at begin document via tnc
+% (No extra code needed here; tnc does the heavy lifting.)
 
-% Optional footer text (uses \capyFooterText if defined)
-\newcommand{\capyApplyFooter}{%
-    \ifdefined\capyFooterText%
-        \pagestyle{fancy}%
-        \fancyhf{}%
-        \fancyfoot[C]{\small \capyFooterText\,\,\textbullet\,\,Page~\thepage}%
-    \fi%
-}
-
-% Auto-embed at document start
-\AtBeginDocument{%
-    \capyEmbedCryptoInfo%
-    \capyApplyWatermark%
-    \capyApplyFooter%
-}
+% Backward-compat aliases (legacy example names)
+\newcommand{\capyEmbedCryptoInfo}{\tncEmbedMeta}
+\let\capyApplyWatermark=\tncApplyWatermark
+\let\capyApplyFooter=\tncApplyFooter
 
 \endinput

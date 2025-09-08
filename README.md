@@ -46,9 +46,24 @@ This creates a **.trustnocorpo/** workspace in your repo and copies helpful temp
 trustnocorpo build path/to/document.tex --classification=CONFIDENTIAL
 # or shorthand:
 trustnocorpo path/to/document.tex --classification=CONFIDENTIAL
+
+# Watermark controls (optional)
+trustnocorpo build path/to/document.tex \
+  --classification=CONFIDENTIAL \
+  --watermark "CONFIDENTIAL" \
+  --wm-opacity 35 \
+  --wm-angle 30 \
+  --wm-tile
+
+# Per-recipient token embedding (optional)
+trustnocorpo build path/to/document.tex --classification=CONFIDENTIAL --recipient-id bob123
+
+# Rasterize to harden watermarks (requires Ghostscript `gs`)
+trustnocorpo build path/to/document.tex --classification=CONFIDENTIAL --rasterize --raster-dpi 150
 ```
 
-> The **--classification** flag lets you tag builds (e.g., **INTERNAL**, **CONFIDENTIAL**, **SECRET**) in the encrypted audit trail.
+> The **--classification** flag tags builds (e.g., **INTERNAL**, **CONFIDENTIAL**, **SECRET**) in the encrypted audit trail.
+> Watermark controls and rasterization are optional defense-in-depth features.
 
 ---
 
@@ -59,7 +74,17 @@ from tnc.core import trustnocorpo
 
 cms = trustnocorpo()
 cms.init_project()  # creates .trustnocorpo/ if missing
-pdf_path = cms.build("document.tex", classification="SECRET")
+pdf_path = cms.build(
+    "document.tex",
+    classification="SECRET",
+    watermark_text="SECRET",
+    watermark_opacity=40,
+    watermark_angle=45,
+    watermark_tile=False,
+    rasterize=True,       # requires Ghostscript
+    raster_dpi=150,
+    recipient_token="alice-token-123",
+)
 print("PDF:", pdf_path)
 ```
 
@@ -90,10 +115,26 @@ init:
 
 ## **Requirements & notes**
 
-* **LaTeX toolchain** (e.g., **pdflatex**/**xelatex**) is only required when you actually compile PDFs.
+* **LaTeX toolchain** (e.g., **lualatex**/**pdflatex**/**xelatex**) is only required when you actually compile PDFs.
   * **Tests** do **not** require LaTeX; they mock the LaTeX layer.
-* **PDF protection**: implemented with **PyPDF2**.
+* **PDF protection**: implemented with **pypdf**.
 * **Audit storage**: encrypted SQLite database lives under **.trustnocorpo/** within your project directory.
+* **Rasterization (optional)**: requires **Ghostscript** (`gs`) on your PATH. If missing, the step is skipped gracefully.
+
+### LaTeX package (optional)
+
+You can also drive presentation from LaTeX using the bundled package `tnc.sty`:
+
+```
+\usepackage{tnc}
+\tncclass{CONFIDENTIAL}
+\tncwatermark{CONFIDENTIAL}
+\tncwatermarksetup{opacity=35,angle=30,tile=false}
+\tncfooterfingerprint{TNC Demo Build}
+% \tncrecipient{alice-token-123}
+```
+
+The CLI parameters and the LaTeX macros are compatible; prefer the CLI for automation and per-build overrides.
 
 ---
 

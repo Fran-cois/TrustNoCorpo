@@ -1,3 +1,9 @@
 include README.md
 include LICENSE
 recursive-exclude * *.pyc __pycache__
+include example/Makefile
+include example/latexmkrc
+include example/arara-directives.tex
+include example/test-crypto.tex
+include example/trustnocorpo-spacial.sty
+include tnc/latex/tnc.sty

@@ -222,3 +222,72 @@ class PDFProtector:
                 return bool(getattr(reader, "is_encrypted", False))
         except Exception:
             return False
+
+    def extract_tokens(self, pdf_path: str):
+        """
+        Extract embedded recipient tokens from a PDF.
+
+        Sources scanned:
+        - PDF metadata (keywords, subject)
+        - XMP metadata (if available via reader.metadata)
+        - Page text for invisible carrier strings like 'TNC_TOKEN: <token>'
+
+        Returns:
+            (set[str], dict) -> (tokens, metadata summary)
+        """
+        tokens = set()
+        meta_summary = {}
+        if not _PDF_BACKEND:
+            return tokens, meta_summary
+
+        try:
+            with open(pdf_path, 'rb') as f:
+                reader = _PdfReader(f)  # type: ignore[misc]
+
+                # Basic document info
+                info = getattr(reader, 'metadata', None) or {}
+                # pypdf returns DocumentInformation-like mapping
+                md = {}
+                try:
+                    for k in ("/Title", "/Author", "/Subject", "/Keywords"):
+                        if hasattr(info, 'get'):
+                            v = info.get(k)
+                        else:
+                            v = getattr(info, k[1:], None)
+                        if v:
+                            md[k] = str(v)
+                except Exception:
+                    pass
+                meta_summary.update(md)
+
+                # Parse keywords/subject for token markers
+                for field in (md.get("/Keywords", ""), md.get("/Subject", "")):
+                    if not field:
+                        continue
+                    for part in str(field).replace(";", ",").split(","):
+                        part = part.strip()
+                        if part.lower().startswith("tnc-token-"):
+                            tokens.add(part.split("tnc-token-")[-1])
+
+                # Scan pages for invisible carrier
+                try:
+                    for page in reader.pages:
+                        try:
+                            text = page.extract_text() or ""
+                        except Exception:
+                            text = ""
+                        if "TNC_TOKEN:" in text:
+                            # naive parse
+                            for frag in text.split("TNC_TOKEN:"):
+                                frag = frag.strip()
+                                if not frag:
+                                    continue
+                                token = frag.split()[0]
+                                if token:
+                                    tokens.add(token.replace("~", "").strip())
+                except Exception:
+                    pass
+
+            return tokens, meta_summary
+        except Exception:
+            return tokens, meta_summary

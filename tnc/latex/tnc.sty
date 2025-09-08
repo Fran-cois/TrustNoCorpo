@@ -1,0 +1,88 @@
+% tnc.sty - TrustNoCorpo LaTeX package (minimal)
+% Provides simple commands to embed classification, watermark, footer, and
+% invisible recipient token. Compatible with lualatex/pdflatex.
+\NeedsTeXFormat{LaTeX2e}
+\ProvidesPackage{tnc}[2025/08/18 TrustNoCorpo: classification, watermark, token]
+
+\RequirePackage{hyperref}
+\RequirePackage{xcolor}
+\RequirePackage{eso-pic}
+\RequirePackage{graphicx}
+\RequirePackage{ifthen}
+\RequirePackage{fancyhdr}
+
+% Public macros
+% \tncclass{LEVEL}
+% \tncwatermark{TEXT}
+% \tncwatermarksetup{opacity=40,angle=45,tile=false}
+% \tncfooterfingerprint{FINGERPRINT}
+% \tncrecipient{TOKEN}
+
+\newcommand{\tncclass}[1]{\def\tncClassification{#1}}
+\newcommand{\tncwatermark}[1]{\def\tncWatermarkText{#1}}
+\newcommand{\tncfooterfingerprint}[1]{\def\tncFooterText{#1}}
+\newcommand{\tncrecipient}[1]{\def\tncRecipientToken{#1}}
+
+% key=value parser (very small)
+% usage: \tncwatermarksetup{opacity=40,angle=45,tile=true}
+\def\tncwatermarksetup#1{%
+  \def\tncWmOpacity{40}% defaults
+  \def\tncWmAngle{45}%
+  \def\tncWmTile{0}%
+  \def\tempA{#1}%
+  \@for\kv:=\tempA\do{\expandafter\tnc@kv\kv==\relax}%
+}
+\def\tnc@kv#1=#2=#3\relax{%
+  \def\k{#1}\def\v{#2}%
+  \ifx\k\@empty\else
+    \ifx\k\opacity\def\tncWmOpacity{#2}\fi
+    \ifx\k\angle\def\tncWmAngle{#2}\fi
+    \ifx\k\tile
+      \edef\tncWmTile{\ifx\v\relax 0\else\ifx\v\empty 0\else\ifx\v\true 1\else\ifx\v\yes 1\else 1\fi\fi\fi\fi}
+    \fi
+  \fi
+}
+
+% Crypto metadata
+\newcommand{\tncEmbedMeta}{%
+  \hypersetup{%
+    pdfsubject={TNC Build},%
+    pdfkeywords={trustnocorpo\ifdefined\tncClassification, \tncClassification\fi\ifdefined\tncRecipientToken, tnc-token-\tncRecipientToken\fi}%
+  }%
+}
+
+% Watermark application
+\newcommand{\tncApplyWatermark}{%
+  \ifdefined\tncWatermarkText
+    \ifx\tncWmOpacity\undefined\def\tncWmOpacity{40}\fi
+    \ifx\tncWmAngle\undefined\def\tncWmAngle{45}\fi
+    \AddToShipoutPictureBG*{%
+      \AtPageLowerLeft{\begin{minipage}[b][\paperheight]{\paperwidth}\centering
+        {\color{gray!\tncWmOpacity}\fontsize{6cm}{6cm}\selectfont\rotatebox{\tncWmAngle}{\tncWatermarkText}}\end{minipage}}}
+    \ifdefined\tncWmTile
+      \AddToShipoutPictureBG*{\AtPageLowerLeft{\begingroup\setlength{\unitlength}{1cm}\begin{picture}(0,0)
+        \multiput(3,3)(6,0){3}{\makebox(0,0){\color{gray!\tncWmOpacity}\fontsize{2cm}{2cm}\selectfont\rotatebox{\tncWmAngle}{\tncWatermarkText}}}
+        \multiput(3,9)(6,0){3}{\makebox(0,0){\color{gray!\tncWmOpacity}\fontsize{2cm}{2cm}\selectfont\rotatebox{\tncWmAngle}{\tncWatermarkText}}}
+        \multiput(3,15)(6,0){3}{\makebox(0,0){\color{gray!\tncWmOpacity}\fontsize{2cm}{2cm}\selectfont\rotatebox{\tncWmAngle}{\tncWatermarkText}}}
+      \end{picture}\endgroup}}\fi
+  \fi
+}
+
+% Footer
+\newcommand{\tncApplyFooter}{%
+  \ifdefined\tncFooterText
+    \pagestyle{fancy}\fancyhf{}\fancyfoot[C]{\small \tncFooterText\,\,\textbullet\,\,Page~\thepage}
+  \fi
+}
+
+% Invisible per-page token
+\newcommand{\tncInvisibleToken}{%
+  \ifdefined\tncRecipientToken
+    \AddToShipoutPictureFG*{\AtPageLowerLeft{\begingroup\color{white}\fontsize{1pt}{1pt}\selectfont\hspace{1pt}\raisebox{1pt}{TNC_TOKEN:~\tncRecipientToken}\endgroup}}
+  \fi
+}
+
+% Auto inject at begin document
+\AtBeginDocument{\tncEmbedMeta\tncApplyWatermark\tncApplyFooter\tncInvisibleToken}
+
+\endinput

@@ -10,6 +10,8 @@ import sqlite3
 import hashlib
 import base64
 from pathlib import Path
+import subprocess
+import shutil
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
@@ -81,7 +83,8 @@ class BuildLogger:
                   classification: str,
                   main_file: str,
                   pdf_path: Optional[str] = None,
-                  pdf_password: Optional[str] = None) -> Optional[int]:
+                  pdf_password: Optional[str] = None,
+                  recipient_token: Optional[str] = None) -> Optional[int]:
         """
         Log a build to encrypted database.
         
@@ -109,7 +112,8 @@ class BuildLogger:
                 'pdf_password_hint': pdf_password[:8] + "..." if pdf_password else None,
                 'user': os.environ.get('USER', 'unknown'),
                 'timestamp_iso': datetime.now().isoformat(),
-                'pdf_size': os.path.getsize(pdf_path) if pdf_path and os.path.exists(pdf_path) else 0
+                'pdf_size': os.path.getsize(pdf_path) if pdf_path and os.path.exists(pdf_path) else 0,
+                'recipient_token': recipient_token,
             }
             
             # Encrypt build data
@@ -255,6 +259,98 @@ class BuildLogger:
         except Exception as e:
             print(f"❌ Failed to list builds: {e}")
             return []
+
+    def find_by_recipient_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """Return the most recent build that used the given recipient token."""
+        try:
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT build_hash, encrypted_data, user_fingerprint, timestamp_utc
+                FROM encrypted_builds 
+                ORDER BY timestamp_utc DESC
+            ''')
+            rows = cursor.fetchall()
+            conn.close()
+
+            for build_hash, encrypted_data, user_fingerprint, timestamp_utc in rows:
+                try:
+                    decrypted_data = self.fernet.decrypt(base64.b64decode(encrypted_data))
+                    build_data = json.loads(decrypted_data.decode())
+                    if build_data.get('recipient_token') == token:
+                        return {
+                            'build_hash': build_hash,
+                            'classification': build_data.get('classification', 'unknown'),
+                            'timestamp_iso': build_data.get('timestamp_iso', timestamp_utc),
+                            'user_fingerprint': user_fingerprint,
+                            'main_file': build_data.get('main_file'),
+                            'pdf_path': build_data.get('pdf_path'),
+                        }
+                except Exception:
+                    continue
+            return None
+        except Exception:
+            return None
+
+    def export_signed(self, output_dir: str = ".", gpg_key: Optional[str] = None) -> Optional[str]:
+        """
+        Export decrypted build log entries into an evidence bundle and optionally GPG-sign it.
+
+        Creates files:
+        - builds.json: decrypted list of entries
+        - builds.json.sha256: checksum
+        - builds.json.asc: GPG detached signature (if gpg_key and gpg available)
+        """
+        try:
+            outdir = Path(output_dir)
+            outdir.mkdir(parents=True, exist_ok=True)
+
+            # Gather all entries
+            conn = sqlite3.connect(str(self.db_path))
+            cursor = conn.cursor()
+            cursor.execute('SELECT build_hash, encrypted_data, user_fingerprint, timestamp_utc FROM encrypted_builds ORDER BY timestamp_utc DESC')
+            rows = cursor.fetchall()
+            conn.close()
+
+            entries: List[Dict[str, Any]] = []
+            for build_hash, encrypted_data, user_fingerprint, timestamp_utc in rows:
+                try:
+                    decrypted_data = self.fernet.decrypt(base64.b64decode(encrypted_data))
+                    build_data = json.loads(decrypted_data.decode())
+                    build_data['build_hash'] = build_hash
+                    build_data['user_fingerprint'] = user_fingerprint
+                    entries.append(build_data)
+                except Exception:
+                    continue
+
+            # Write JSON
+            bundle_json = outdir / 'builds.json'
+            with open(bundle_json, 'w') as f:
+                json.dump(entries, f, indent=2)
+
+            # Checksum
+            import hashlib as _hashlib
+            with open(bundle_json, 'rb') as f:
+                sha = _hashlib.sha256(f.read()).hexdigest()
+            with open(outdir / 'builds.json.sha256', 'w') as f:
+                f.write(sha + "  builds.json\n")
+
+            # Optional GPG sign
+            if gpg_key and shutil.which('gpg'):
+                asc_path = outdir / 'builds.json.asc'
+                try:
+                    subprocess.run([
+                        'gpg', '--yes', '--armor', '--local-user', gpg_key,
+                        '--output', str(asc_path), '--detach-sign', str(bundle_json)
+                    ], check=True)
+                except Exception as e:
+                    print(f"⚠️ GPG signing failed: {e}")
+
+            print(f"✅ Exported evidence bundle in {outdir}")
+            return str(outdir)
+        except Exception as e:
+            print(f"❌ Export failed: {e}")
+            return None
     
     def get_user_builds_stats(self) -> Dict[str, Any]:
         """

@@ -111,8 +111,14 @@ class trustnocorpo:
               protect_pdf: bool = True,
               pdf_password: Optional[str] = None,
               watermark_text: Optional[str] = None,
+              watermark_opacity: Optional[int] = None,
+              watermark_angle: Optional[int] = None,
+              watermark_tile: bool = False,
+              rasterize: bool = False,
+              raster_dpi: int = 150,
               footer_fingerprint: bool = False,
-              only_password: bool = False) -> Optional[str]:
+              only_password: bool = False,
+              recipient_token: Optional[str] = None) -> Optional[str]:
         """
         Build a LaTeX document with cryptographic tracking.
         
@@ -131,6 +137,7 @@ class trustnocorpo:
             if not tex_path.exists():
                 print(f"❌ LaTeX file not found: {tex_file}")
                 return None
+
 
             # Setup build environment
             build_dir = Path(output_dir or "build")
@@ -160,25 +167,33 @@ class trustnocorpo:
                 except Exception:
                     footer_text = None
 
-            # Call _run_latex_build in a way that stays compatible with older/test mocks
+            # Call _run_latex_build preferring extended signature; fall back to legacy
             try:
+                pdf_path = self._run_latex_build(
+                    tex_path, build_dir, build_hash,
+                    generation_info, generation_time, classification,
+                    watermark_text=watermark_text, footer_text=footer_text,
+                    wm_opacity=watermark_opacity, wm_angle=watermark_angle, wm_tile=watermark_tile,
+                    recipient_token=recipient_token,
+                    quiet=only_password
+                )
+            except TypeError:
                 # Legacy signature without extra keyword arguments
                 pdf_path = self._run_latex_build(
                     tex_path, build_dir, build_hash,
                     generation_info, generation_time, classification
                 )
-            except TypeError:
-                # Newer signature with optional formatting and quiet flags
-                pdf_path = self._run_latex_build(
-                    tex_path, build_dir, build_hash,
-                    generation_info, generation_time, classification,
-                    watermark_text=watermark_text, footer_text=footer_text,
-                    quiet=only_password
-                )
             
             if not pdf_path:
                 return None
                 
+            # Optional rasterization (before protection)
+            if rasterize:
+                try:
+                    pdf_path = self._rasterize_pdf(pdf_path, dpi=raster_dpi)
+                except Exception:
+                    pass
+
             # Protect PDF if requested
             if protect_pdf:
                 protected_path = self._protect_pdf(
@@ -200,12 +215,14 @@ class trustnocorpo:
                 with contextlib.redirect_stdout(io.StringIO()):
                     self._log_build(
                         build_hash, generation_info, generation_time,
-                        classification, tex_file, pdf_path, pdf_password
+                        classification, tex_file, pdf_path, pdf_password,
+                        recipient_token=recipient_token
                     )
             else:
                 self._log_build(
                     build_hash, generation_info, generation_time,
-                    classification, tex_file, pdf_path, pdf_password
+                    classification, tex_file, pdf_path, pdf_password,
+                    recipient_token=recipient_token
                 )
             
             if not only_password:
@@ -217,6 +234,44 @@ class trustnocorpo:
                 print(f"❌ Build failed: {e}")
             return None
     
+    def _rasterize_pdf(self, pdf_path: str, dpi: int = 150) -> str:
+        """Best-effort PDF rasterization using Ghostscript.
+
+        Attempts to convert the input PDF into an image-based PDF to harden
+        watermark removal. Requires `gs` on PATH. If Ghostscript or the
+        `pdfimage24` device is not available, returns the original PDF path.
+
+        Args:
+            pdf_path: Path to the input PDF.
+            dpi: Rasterization resolution.
+
+        Returns:
+            Path to the rasterized PDF if successful, else the original path.
+        """
+        try:
+            if not shutil.which("gs"):
+                return pdf_path
+            src = Path(pdf_path)
+            out_path = src.with_name(src.stem + f".r{dpi}.pdf")
+            cmd = [
+                "gs",
+                "-sDEVICE=pdfimage24",  # image-based PDF device (if available)
+                f"-r{int(dpi)}",
+                "-dBATCH",
+                "-dNOPAUSE",
+                "-dSAFER",
+                "-o",
+                str(out_path),
+                str(src),
+            ]
+            # Run quietly; caller handles fallbacks
+            res = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            if res.returncode == 0 and out_path.exists() and out_path.stat().st_size > 0:
+                return str(out_path)
+            # Fallback: keep original
+            return str(src)
+        except Exception:
+            return pdf_path
     def list_builds(self, limit: int = 10) -> List[Dict[str, Any]]:
         """
         List recent builds from encrypted database.
@@ -328,6 +383,16 @@ class trustnocorpo:
         """Copy LaTeX style to project directory"""
         # For the standalone package, generate a local style file
         self._create_basic_style()
+        # Also copy packaged tnc.sty if available, for users who prefer \usepackage{tnc}
+        try:
+            import importlib.resources as ir
+            with ir.as_file(ir.files('tnc.latex') / 'tnc.sty') as sty_path:  # type: ignore[attr-defined]
+                if sty_path.exists():
+                    target = self.project_dir / 'tnc.sty'
+                    if (not target.exists()) or target.stat().st_size == 0:
+                        shutil.copyfile(sty_path, target)
+        except Exception:
+            pass
         
     def _create_basic_style(self):
         """Create a basic LaTeX style file"""
@@ -348,7 +413,7 @@ class trustnocorpo:
     \ifdefined\capyBuildHash%
         \hypersetup{%
             pdfsubject={Build: \capyBuildHash},
-            pdfkeywords={trustnocorpo, Crypto, \capyClassification}
+            pdfkeywords={trustnocorpo, Crypto, \capyClassification\ifdefined\capyRecipientToken, tnc-token-\capyRecipientToken\fi}
         }%
     \fi%
 }
@@ -356,14 +421,33 @@ class trustnocorpo:
 % Optional watermark (uses \capyWatermarkText if defined)
 \newcommand{\capyApplyWatermark}{%
     \ifdefined\capyWatermarkText%
+        % Defaults
+        \ifx\capyWmOpacity\undefined\def\capyWmOpacity{40}\fi
+        \ifx\capyWmAngle\undefined\def\capyWmAngle{45}\fi
+        % Single center watermark
         \AddToShipoutPictureBG*{%
             \AtPageLowerLeft{%
                 \begin{minipage}[b][\paperheight]{\paperwidth}%
                     \centering
-                    {\color{gray!40}\fontsize{6cm}{6cm}\selectfont\rotatebox{45}{\capyWatermarkText}}%
+                    {\color{gray!\capyWmOpacity}\fontsize{6cm}{6cm}\selectfont\rotatebox{\capyWmAngle}{\capyWatermarkText}}%
                 \end{minipage}%
             }%
         }%
+        % Optional tiling (simple 3x3 grid, lighter opacity)
+        \ifdefined\capyWmTile%
+            \AddToShipoutPictureBG*{%
+                \AtPageLowerLeft{%
+                    \begingroup
+                    \setlength{\unitlength}{1cm}
+                    \begin{picture}(0,0)
+                    \multiput(3,3)(6,0){3}{\makebox(0,0){\color{gray!\capyWmOpacity}\fontsize{2cm}{2cm}\selectfont\rotatebox{\capyWmAngle}{\capyWatermarkText}}}
+                    \multiput(3,9)(6,0){3}{\makebox(0,0){\color{gray!\capyWmOpacity}\fontsize{2cm}{2cm}\selectfont\rotatebox{\capyWmAngle}{\capyWatermarkText}}}
+                    \multiput(3,15)(6,0){3}{\makebox(0,0){\color{gray!\capyWmOpacity}\fontsize{2cm}{2cm}\selectfont\rotatebox{\capyWmAngle}{\capyWatermarkText}}}
+                    \end{picture}
+                    \endgroup
+                }%
+            }%
+        \fi
     \fi%
 }
 
@@ -376,11 +460,27 @@ class trustnocorpo:
     \fi%
 }
 
+% Invisible per-page token carrier (zero-visibility text layer)
+\newcommand{\capyInvisibleToken}{%
+    \ifdefined\capyRecipientToken%
+        \AddToShipoutPictureFG*{%
+            \AtPageLowerLeft{%
+                \begingroup
+                \color{white}% white on white
+                \fontsize{1pt}{1pt}\selectfont
+                \hspace{1pt}\raisebox{1pt}{TNC_TOKEN:~\capyRecipientToken}% tiny, off-grid
+                \endgroup
+            }%
+        }%
+    \fi%
+}
+
 % Auto-embed at document start
 \AtBeginDocument{%
     \capyEmbedCryptoInfo%
     \capyApplyWatermark%
     \capyApplyFooter%
+    \capyInvisibleToken%
 }
 
 \endinput
@@ -403,6 +503,10 @@ class trustnocorpo:
                         gen_info, gen_time, classification,
                         watermark_text: Optional[str] = None,
                         footer_text: Optional[str] = None,
+                        wm_opacity: Optional[int] = None,
+                        wm_angle: Optional[int] = None,
+                        wm_tile: bool = False,
+                        recipient_token: Optional[str] = None,
                         quiet: bool = False):
         """Run LaTeX compilation with crypto variables in a robust, non-hanging way."""
         try:
@@ -418,6 +522,14 @@ class trustnocorpo:
                 wrapper_content += f"\\def\\capyWatermarkText{{{watermark_text}}}"
             if footer_text:
                 wrapper_content += f"\\def\\capyFooterText{{{footer_text}}}"
+            if wm_opacity is not None:
+                wrapper_content += f"\\def\\capyWmOpacity{{{max(5, min(100, wm_opacity))}}}"
+            if wm_angle is not None:
+                wrapper_content += f"\\def\\capyWmAngle{{{wm_angle}}}"
+            if wm_tile:
+                wrapper_content += f"\\def\\capyWmTile{{1}}"
+            if recipient_token:
+                wrapper_content += f"\\def\\capyRecipientToken{{{recipient_token}}}"
             wrapper_content += f"\\input{{{tex_path}}}"
             with open(wrapper_path, "w") as wf:
                 wf.write(wrapper_content)
@@ -470,30 +582,89 @@ class trustnocorpo:
                 if not quiet:
                     print("❌ PDF not generated. Check LaTeX log above.")
                 return None
-
         except Exception as e:
             if not quiet:
-                print(f"❌ LaTeX build error: {e}")
-            return None
-    
-    def _protect_pdf(self, pdf_path, build_hash, classification, password, quiet: bool = False):
-        """Protect PDF with password. Returns protected_path or None"""
-        try:
-            return self.pdf_protector.protect_pdf(
-                pdf_path, password, build_hash, classification, auto_password=True, quiet=quiet
-            )
-        except Exception as e:
-            if not quiet:
-                print(f"⚠️ PDF protection failed: {e}")
+                print(f"❌ LaTeX build failed: {e}")
             return None
     
     def _log_build(self, build_hash, gen_info, gen_time, 
-                   classification, tex_file, pdf_path, password):
+                   classification, tex_file, pdf_path, password, recipient_token: Optional[str] = None):
         """Log build to encrypted database"""
         try:
             self.logger.log_build(
                 build_hash, gen_info, gen_time,
-                classification, tex_file, pdf_path, password
+                classification, tex_file, pdf_path, password,
+                recipient_token=recipient_token
             )
         except Exception as e:
             print(f"⚠️ Database logging failed: {e}")
+
+    def validate_pdf(self, pdf_path: str, output_json: bool = False):
+        """Extract embedded recipient tokens and map them to audit entries."""
+        try:
+            tokens, meta = self.pdf_protector.extract_tokens(pdf_path)
+            report = {
+                'pdf': pdf_path,
+                'tokens': sorted(tokens),
+                'metadata': meta,
+                'matches': []
+            }
+            # Search logger for matching recipient tokens
+            for token in tokens:
+                match = self.logger.find_by_recipient_token(token)
+                if match:
+                    report['matches'].append(match)
+            # Output
+            import json as _json
+            if output_json:
+                print(_json.dumps(report, indent=2))
+            else:
+                print(f"📄 Validation for {pdf_path}")
+                if tokens:
+                    print("🔎 Tokens detected:", ", ".join(sorted(tokens)))
+                else:
+                    print("⚠️ No tokens detected")
+                if report['matches']:
+                    print("🔗 Mapped audit entries:")
+                    for m in report['matches']:
+                        print(f"  - Hash: {m.get('build_hash')} | Classification: {m.get('classification')} | Time: {m.get('timestamp_iso')}")
+                else:
+                    print("⚠️ No matching audit entries found")
+            return report
+        except Exception as e:
+            print(f"❌ Validation failed: {e}")
+            return None
+
+    def fanout_builds(self, csv_path: str, tex_file: str, classification: str = "UNCLASSIFIED",
+                      output_root: Optional[str] = None, watermark_text: Optional[str] = None,
+                      footer_fingerprint: bool = False) -> bool:
+        """Generate per-recipient builds from a CSV with column 'recipient' or 'id'."""
+        try:
+            import csv
+            out_root = Path(output_root or "fanout_out")
+            out_root.mkdir(parents=True, exist_ok=True)
+            ok = True
+            with open(csv_path, newline='') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    token = row.get('recipient') or row.get('id') or row.get('token')
+                    if not token:
+                        continue
+                    subdir = out_root / token
+                    subdir.mkdir(exist_ok=True)
+                    res = self.build(
+                        tex_file=tex_file,
+                        classification=classification,
+                        output_dir=str(subdir),
+                        protect_pdf=True,
+                        pdf_password=None,
+                        watermark_text=watermark_text,
+                        footer_fingerprint=footer_fingerprint,
+                        only_password=False,
+                        recipient_token=token,
+                    )
+                    ok = ok and bool(res)
+            return ok
+        except Exception as e:
+            print(f"❌ Fanout failed: {e}")
+            return False

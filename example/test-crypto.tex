@@ -1,6 +1,6 @@
 \documentclass[11pt]{article}
-% Utiliser le style trustnocorpo embarqué
-\usepackage{trustnocorpo-spacial}
+% Utiliser le package TrustNoCorpo dédié
+\usepackage{tnc}
 
 \usepackage[utf8]{inputenc}
 \usepackage{geometry}
@@ -9,6 +9,13 @@
 \title{TrustNoCorpo (tnc) — Démonstration}
 \author{TrustNoCorpo}
 \date{\today}
+
+% Démonstration des macros (facultatif, la CLI peut injecter ses propres réglages)
+\tncclass{CONFIDENTIAL}
+\tncwatermark{CONFIDENTIAL}
+\tncwatermarksetup{opacity=35,angle=30,tile=false}
+\tncfooterfingerprint{TNC Demo Build}
+% \tncrecipient{alice-token-123} % Dé-commentez pour un jeton destinataire
 
 \begin{document}
 \maketitle
