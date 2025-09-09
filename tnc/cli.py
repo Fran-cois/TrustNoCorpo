@@ -8,6 +8,8 @@ import argparse
 import subprocess
 import sys
 import os
+import io
+import textwrap
 from pathlib import Path
 
 from .core import trustnocorpo
@@ -25,12 +27,12 @@ def cmd_init(args):
 def cmd_build(args):
     """Build LaTeX document with crypto tracking"""
     cms = trustnocorpo(args.project_dir)
-    
+
     # Check if project is initialized
     if not (cms.trustnocorpo_dir / "builds.db").exists():
         print("❌ trustnocorpo not initialized. Run: trustnocorpo init")
         return 1
-    
+
     pdf_path = cms.build(
         tex_file=args.tex_file,
         classification=args.classification,
@@ -47,7 +49,7 @@ def cmd_build(args):
         only_password=getattr(args, 'only_password', False),
         recipient_token=getattr(args, 'recipient_id', None),
     )
-    
+
     return 0 if pdf_path else 1
 
 
@@ -75,31 +77,31 @@ def cmd_info(args):
 def cmd_keys(args):
     """Manage user keys"""
     key_manager = KeyManager()
-    
+
     if args.generate:
         if key_manager.user_has_keys() and not args.force:
             print("✅ User keys already exist. Use --force to regenerate.")
             return 0
-        
+
         username = input("👤 Username: ").strip()
         if not username:
             print("❌ Username required")
             return 1
-        
+
         import getpass
         password = getpass.getpass("🔑 Master password: ")
         if not password:
             print("❌ Master password required")
             return 1
-        
+
         success = key_manager.generate_user_keys(username, password)
         return 0 if success else 1
-    
+
     elif args.info:
         if not key_manager.user_has_keys():
             print("❌ No user keys found. Generate with: trustnocorpo keys --generate")
             return 1
-        
+
         info = key_manager.get_user_info()
         if info:
             print("👤 User Key Information:")
@@ -111,7 +113,7 @@ def cmd_keys(args):
         else:
             print("❌ Failed to read user info")
             return 1
-    
+
     elif args.reset:
         confirm = input("⚠️  Reset all user keys? (yes/no): ").strip().lower()
         if confirm in ['yes', 'y']:
@@ -125,7 +127,7 @@ def cmd_keys(args):
         else:
             print("🚫 Reset cancelled")
             return 0
-    
+
     else:
         print("❌ Use --generate, --info, or --reset")
         return 1
@@ -134,7 +136,7 @@ def cmd_keys(args):
 def cmd_protect(args):
     """Protect/unprotect PDFs"""
     protector = PDFProtector()
-    
+
     if args.unprotect:
         result = protector.unprotect_pdf(
             args.pdf_file,
@@ -149,7 +151,7 @@ def cmd_protect(args):
             classification=args.classification,
             auto_password=args.auto_password
         )
-    
+
     return 0 if result else 1
 
 
@@ -163,7 +165,8 @@ def cmd_validate(args):
 def cmd_export_log(args):
     """Export encrypted log entries, optionally GPG-signing the bundle."""
     cms = trustnocorpo(args.project_dir)
-    out = cms.logger.export_signed(output_dir=args.output_dir or ".", gpg_key=args.gpg_key)
+    out = cms.logger.export_signed(
+        output_dir=args.output_dir or ".", gpg_key=args.gpg_key)
     return 0 if out else 1
 
 
@@ -196,7 +199,7 @@ Examples:
     trustnocorpo --demo                         # One-shot demo (text -> PDF -> watermark+metadata -> encrypt)
         """
     )
-    
+
     parser.add_argument(
         '--project-dir', '-d',
         help='Project directory (default: current directory)',
@@ -207,101 +210,125 @@ Examples:
         action='store_true',
         help='Run one-shot demo: TEXT → TXT → PDF → watermark+metadata → encrypt'
     )
-    
-    subparsers = parser.add_subparsers(dest='command', help='Available commands')
-    
+
+    subparsers = parser.add_subparsers(
+        dest='command', help='Available commands')
+
     # Init command
-    init_parser = subparsers.add_parser('init', help='Initialize trustnocorpo project')
-    init_parser.add_argument('--force', action='store_true', help='Force reinitialization')
+    init_parser = subparsers.add_parser(
+        'init', help='Initialize trustnocorpo project')
+    init_parser.add_argument(
+        '--force', action='store_true', help='Force reinitialization')
     init_parser.set_defaults(func=cmd_init)
-    
+
     # Build command
     build_parser = subparsers.add_parser('build', help='Build LaTeX document')
     build_parser.add_argument('tex_file', help='LaTeX file to build')
-    build_parser.add_argument('--classification', '-c', default='UNCLASSIFIED', 
-                             help='Document classification')
+    build_parser.add_argument('--classification', '-c', default='UNCLASSIFIED',
+                              help='Document classification')
     build_parser.add_argument('--output-dir', '-o', help='Output directory')
     build_parser.add_argument('--protect', action='store_true', default=True,
-                             help='Protect PDF with password')
+                              help='Protect PDF with password')
     build_parser.add_argument('--password', '-p', help='Custom PDF password')
-    build_parser.add_argument('--watermark', help='Watermark text to inject (e.g., CONFIDENTIAL)')
+    build_parser.add_argument(
+        '--watermark', help='Watermark text to inject (e.g., CONFIDENTIAL)')
     build_parser.add_argument('--wm-opacity', type=int, choices=range(5, 101), metavar='PCT',
-                             help='Watermark shade percent (5-100), default 40')
+                              help='Watermark shade percent (5-100), default 40')
     build_parser.add_argument('--wm-angle', type=int, metavar='DEG',
-                             help='Watermark angle in degrees, default 45')
+                              help='Watermark angle in degrees, default 45')
     build_parser.add_argument('--wm-tile', action='store_true',
-                             help='Tile watermark across the page (3x3)')
+                              help='Tile watermark across the page (3x3)')
     build_parser.add_argument('--rasterize', action='store_true',
-                             help='Rasterize PDF post-build via Ghostscript to frustrate removal of watermarks')
+                              help='Rasterize PDF post-build via Ghostscript to frustrate removal of watermarks')
     build_parser.add_argument('--raster-dpi', type=int, default=150,
-                             help='Rasterization DPI (affects image resolution), default 150')
+                              help='Rasterization DPI (affects image resolution), default 150')
     build_parser.add_argument('--footer-fingerprint', action='store_true',
-                             help='Inject user fingerprint in the PDF footer')
+                              help='Inject user fingerprint in the PDF footer')
     build_parser.add_argument('--only-password', action='store_true',
-                             help='Suppress all output except the final password line')
-    build_parser.add_argument('--recipient-id', help='Per-recipient token to embed (opt-in)')
+                              help='Suppress all output except the final password line')
+    build_parser.add_argument(
+        '--recipient-id', help='Per-recipient token to embed (opt-in)')
     build_parser.set_defaults(func=cmd_build)
-    
+
     # List command
     list_parser = subparsers.add_parser('list', help='List recent builds')
     list_parser.add_argument('--limit', '-l', type=int, default=10,
-                            help='Maximum builds to show')
+                             help='Maximum builds to show')
     list_parser.set_defaults(func=cmd_list)
-    
+
     # Verify command
-    verify_parser = subparsers.add_parser('verify', help='Verify build integrity')
+    verify_parser = subparsers.add_parser(
+        'verify', help='Verify build integrity')
     verify_parser.add_argument('build_hash', help='Build hash to verify')
     verify_parser.set_defaults(func=cmd_verify)
-    
+
     # Info command
     info_parser = subparsers.add_parser('info', help='Show system information')
     info_parser.set_defaults(func=cmd_info)
-    
+
     # Keys command
     keys_parser = subparsers.add_parser('keys', help='Manage user keys')
     keys_group = keys_parser.add_mutually_exclusive_group(required=True)
-    keys_group.add_argument('--generate', action='store_true', help='Generate user keys')
-    keys_group.add_argument('--info', action='store_true', help='Show key information')
-    keys_group.add_argument('--reset', action='store_true', help='Reset user keys')
-    keys_parser.add_argument('--force', action='store_true', help='Force key regeneration')
+    keys_group.add_argument(
+        '--generate', action='store_true', help='Generate user keys')
+    keys_group.add_argument('--info', action='store_true',
+                            help='Show key information')
+    keys_group.add_argument(
+        '--reset', action='store_true', help='Reset user keys')
+    keys_parser.add_argument(
+        '--force', action='store_true', help='Force key regeneration')
     keys_parser.set_defaults(func=cmd_keys)
-    
+
     # Protect command
-    protect_parser = subparsers.add_parser('protect', help='Protect/unprotect PDFs')
-    protect_parser.add_argument('pdf_file', help='PDF file to protect/unprotect')
-    protect_parser.add_argument('--unprotect', action='store_true', 
-                               help='Unprotect instead of protect')
+    protect_parser = subparsers.add_parser(
+        'protect', help='Protect/unprotect PDFs')
+    protect_parser.add_argument(
+        'pdf_file', help='PDF file to protect/unprotect')
+    protect_parser.add_argument('--unprotect', action='store_true',
+                                help='Unprotect instead of protect')
     protect_parser.add_argument('--password', '-p', help='Custom password')
-    protect_parser.add_argument('--build-hash', help='Build hash for password derivation')
-    protect_parser.add_argument('--classification', help='Document classification')
+    protect_parser.add_argument(
+        '--build-hash', help='Build hash for password derivation')
+    protect_parser.add_argument(
+        '--classification', help='Document classification')
     protect_parser.add_argument('--auto-password', action='store_true', default=True,
-                               help='Auto-generate password')
+                                help='Auto-generate password')
     protect_parser.set_defaults(func=cmd_protect)
 
     # Validate command
-    validate_parser = subparsers.add_parser('validate', help='Validate a leaked PDF and recover token(s)')
+    validate_parser = subparsers.add_parser(
+        'validate', help='Validate a leaked PDF and recover token(s)')
     validate_parser.add_argument('pdf_file', help='Leaked PDF to validate')
-    validate_parser.add_argument('--json', action='store_true', help='Output JSON report')
+    validate_parser.add_argument(
+        '--json', action='store_true', help='Output JSON report')
     validate_parser.set_defaults(func=cmd_validate)
 
     # Export log
-    export_parser = subparsers.add_parser('export-log', help='Export encrypted log and sign bundle (GPG optional)')
-    export_parser.add_argument('--output-dir', '-o', help='Directory to write the evidence bundle')
-    export_parser.add_argument('--gpg-key', help='GPG key ID/email to sign with')
+    export_parser = subparsers.add_parser(
+        'export-log', help='Export encrypted log and sign bundle (GPG optional)')
+    export_parser.add_argument(
+        '--output-dir', '-o', help='Directory to write the evidence bundle')
+    export_parser.add_argument(
+        '--gpg-key', help='GPG key ID/email to sign with')
     export_parser.set_defaults(func=cmd_export_log)
 
     # Fanout
-    fanout_parser = subparsers.add_parser('fanout', help='Per-recipient builds from a CSV')
-    fanout_parser.add_argument('recipients_csv', help='CSV with header "recipient" or "id"')
-    fanout_parser.add_argument('tex_file', help='LaTeX file to build for each recipient')
-    fanout_parser.add_argument('--classification', '-c', default='UNCLASSIFIED', 
-                              help='Document classification')
-    fanout_parser.add_argument('--output-dir', '-o', help='Root output directory (default: fanout_out)')
-    fanout_parser.add_argument('--watermark', help='Watermark text to inject (e.g., CONFIDENTIAL)')
+    fanout_parser = subparsers.add_parser(
+        'fanout', help='Per-recipient builds from a CSV')
+    fanout_parser.add_argument(
+        'recipients_csv', help='CSV with header "recipient" or "id"')
+    fanout_parser.add_argument(
+        'tex_file', help='LaTeX file to build for each recipient')
+    fanout_parser.add_argument('--classification', '-c', default='UNCLASSIFIED',
+                               help='Document classification')
+    fanout_parser.add_argument(
+        '--output-dir', '-o', help='Root output directory (default: fanout_out)')
+    fanout_parser.add_argument(
+        '--watermark', help='Watermark text to inject (e.g., CONFIDENTIAL)')
     fanout_parser.add_argument('--footer-fingerprint', action='store_true',
-                              help='Inject user fingerprint in the PDF footer')
+                               help='Inject user fingerprint in the PDF footer')
     fanout_parser.set_defaults(func=cmd_fanout)
-    
+
     # Shorthand: if first arg looks like a .tex file, rewrite to 'build <tex>'
     raw_args = sys.argv[1:]
     if raw_args and raw_args[0].lower().endswith('.tex'):
@@ -500,17 +527,173 @@ say ""
 say "Tip: export OWNER/PURPOSE/NUDGE/WATERMARK/PDF_PASS to customize."
 """
         try:
-            # Feed the script to bash via stdin
-            subprocess.run(["bash", "-s"], input=demo_script, text=True, check=True)
+            try:
+                # Prefer UTF-8 console on Windows; fall back silently if unsupported
+                # type: ignore[attr-defined]
+                sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+                # type: ignore[attr-defined]
+                sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+            except Exception:
+                pass
+
+            def _say(msg: str, is_err: bool = False) -> None:
+                out = msg
+                print(out, file=(sys.stderr if is_err else sys.stdout))
+
+            # --- tweakables (env) ---
+            TEXT = os.environ.get(
+                "TEXT",
+                "When you’re sick that your deck is “so confidential” it somehow lands in every VC database, give it a gentle nudge.\nThis file was generated in ~30 seconds and protected with TrustNoCorpo.",
+            )
+            INPUT_FILE = os.environ.get("INPUT_FILE", "")
+            PDF_PASS = os.environ.get("PDF_PASS", "demo-P@ssw0rd")
+            OWNER = os.environ.get("OWNER", "ACME")
+            PURPOSE = os.environ.get("PURPOSE", "review")
+            NUDGE = os.environ.get("NUDGE", "no-forwarding")
+            WATERMARK = os.environ.get(
+                "WATERMARK", "CONFIDENTIAL — VC Leaks Cure")
+
+            TXT_OUT = os.environ.get("TXT_OUT", "note.txt")
+            PDF_OUT = os.environ.get("PDF_OUT", "note.pdf")
+            PREP_OUT = os.environ.get("PREP_OUT", "note.prepared.pdf")
+            SEC_OUT = os.environ.get("SEC_OUT", "note.secured.pdf")
+
+            # 1) Write TXT
+            try:
+                if INPUT_FILE:
+                    with open(INPUT_FILE, "rb") as src, open(TXT_OUT, "wb") as dst:
+                        dst.write(src.read())
+                else:
+                    with open(TXT_OUT, "w", encoding="utf-8") as f:
+                        f.write(TEXT + ("\n" if not TEXT.endswith("\n") else ""))
+                _say(f"Wrote {TXT_OUT}")
+            except Exception as e:
+                _say(f"❌ Failed to write text file: {e}", is_err=True)
+                return 1
+
+            # 2) Base PDF from text
+            try:
+                from reportlab.lib.pagesizes import A4
+                from reportlab.pdfgen import canvas as _rl_canvas
+                from reportlab.lib.units import cm as _cm
+
+                with open(TXT_OUT, "r", encoding="utf-8") as f:
+                    lines = f.readlines()
+
+                c = _rl_canvas.Canvas(PDF_OUT, pagesize=A4)
+                w, h = A4
+                margin = 2 * _cm
+                y = h - margin
+                c.setFont("Helvetica", 12)
+                for raw in lines:
+                    for chunk in textwrap.wrap(raw.rstrip("\n"), width=95) or [""]:
+                        if y < margin:
+                            c.showPage()
+                            c.setFont("Helvetica", 12)
+                            y = h - margin
+                        c.drawString(margin, y, chunk)
+                        y -= 14
+                c.save()
+                _say(f"Created {PDF_OUT}")
+            except Exception as e:
+                _say(f"❌ PDF creation failed: {e}", is_err=True)
+                return 1
+
+            # 3) Watermark + metadata
+            try:
+                from pypdf import PdfReader as _PdfReader_demo, PdfWriter as _PdfWriter_demo
+
+                wm_page_obj = None
+                try:
+                    from reportlab.pdfgen import canvas as _rl_canvas2
+                    from reportlab.lib.pagesizes import A4 as _A4_2
+                    buf = io.BytesIO()
+                    c = _rl_canvas2.Canvas(buf, pagesize=_A4_2)
+                    w, h = _A4_2
+                    c.saveState()
+                    c.translate(w / 2, h / 2)
+                    c.rotate(30)
+                    c.setFillGray(0.85)
+                    c.setFont("Helvetica-Bold", 36)
+                    c.drawCentredString(0, 0, WATERMARK)
+                    c.restoreState()
+                    c.save()
+                    buf.seek(0)
+                    c.setFillGray(0.85)
+                    c.setFont("Helvetica-Bold", 36)
+                    c.drawCentredString(0, 0, WATERMARK)
+                    c.restoreState()
+                    c.save()
+                    buf.seek(0)
+                    wm_page_obj = _PdfReader_demo(buf).pages[0]
+                except Exception:
+                    wm_page_obj = None
+
+                reader = _PdfReader_demo(PDF_OUT)
+                writer = _PdfWriter_demo()
+                for page in reader.pages:
+                    if wm_page_obj is not None:
+                        try:
+                            page.merge_page(wm_page_obj)
+                        except Exception:
+                            pass
+                    writer.add_page(page)
+
+                writer.add_metadata({
+                    "/Producer": "TrustNoCorpo demo",
+                    "/Creator": "TrustNoCorpo demo",
+                    "/Author": OWNER,
+                    "/Subject": PURPOSE,
+                    "/Keywords": f"nudge={NUDGE}",
+                    "/Owner": OWNER,
+                    "/Purpose": PURPOSE,
+                    "/Nudge": NUDGE,
+                })
+
+                with open(PREP_OUT, "wb") as f:
+                    writer.write(f)
+                _say(f"Prepared {PREP_OUT} (watermark + metadata)")
+            except Exception as e:
+                _say(f"❌ Watermark/metadata step failed: {e}", is_err=True)
+                return 1
+
+            # 4) Encrypt to SEC_OUT
+            try:
+                from pypdf import PdfReader as _PdfReader_enc, PdfWriter as _PdfWriter_enc
+                reader = _PdfReader_enc(PREP_OUT)
+                writer = _PdfWriter_enc()
+                for p in reader.pages:
+                    writer.add_page(p)
+                writer.encrypt(user_password=PDF_PASS)
+                with open(SEC_OUT, "wb") as f:
+                    writer.write(f)
+                _say(f"Encrypted → {SEC_OUT}")
+            except Exception as e:
+                _say(f"❌ Encryption failed: {e}", is_err=True)
+                return 1
+
+            _say("")
+            _say("Done.")
+            _say(f"  - {TXT_OUT}")
+            _say(f"  - {PDF_OUT}")
+            _say(f"  - {PREP_OUT}  (watermark + metadata)")
+            _say(f"  - {SEC_OUT}   (encrypted; password: {PDF_PASS})")
+            _say("")
+            _say(
+                "Tip: set OWNER/PURPOSE/NUDGE/WATERMARK/PDF_PASS/TEXT/INPUT_FILE to customize.")
             return 0
         except subprocess.CalledProcessError as e:
-            print(f"❌ Demo failed (exit {e.returncode})")
+            try:
+                _say(f"❌ Demo failed (exit {e.returncode})", is_err=True)
+            except Exception:
+                # Fallback if _say isn't available due to earlier errors
+                print(f"Demo failed (exit {e.returncode})")
             return e.returncode
 
     if not args.command:
         parser.print_help()
         return 1
-    
+
     # Execute command
     try:
         return args.func(args)
