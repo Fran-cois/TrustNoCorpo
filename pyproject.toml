@@ -13,6 +13,7 @@ requires-python = ">=3.9"
 dependencies = [
   "cryptography>=42.0.0",
   "pypdf>=4.2.0",
+  "reportlab>=3.6.12",
 ]
 keywords = ["latex", "pdf", "security", "cryptography", "watermark", "cli"]
 classifiers = [
